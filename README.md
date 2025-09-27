@@ -146,6 +146,23 @@ Designed specifically for the South African healthcare environment:
 - Resource constraint considerations
 - Emergency response optimization
 
+## Security Framework
+
+MediGrid implements a complete **Security Software Development Life Cycle (SSDLC)** framework
+specifically designed for healthcare applications, ensuring full compliance with South African POPIA
+regulations and international healthcare security standards.
+
+### Security Features
+
+- **AES-256 Encryption** for all Patient Health Information (PHI)
+- **Multi-Factor Authentication** for healthcare workers
+- **Role-Based Access Control** (Doctor, Nurse, Pharmacist, Admin, Receptionist)
+- **POPIA-Compliant** data handling and audit logging
+- **South African ID Validation** using Luhn algorithm
+- **Comprehensive Security Testing** framework
+- **Real-time Security Monitoring** and incident response
+- **PHI Access Audit Trails** for compliance
+
 ## Installation & Setup
 
 1. Clone the repository

@@ -14,6 +14,11 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -22,12 +27,18 @@ import androidx.compose.ui.unit.sp
 import com.example.medigrid.data.StatCard
 import com.example.medigrid.ui.components.StatCardComponent
 import com.example.medigrid.ui.theme.*
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PowerStatusScreen(
     modifier: Modifier = Modifier,
 ) {
+    var isRefreshing by remember { mutableStateOf(false) }
+    var lastRefreshed by remember { mutableStateOf("Never") }
+    var scheduleData by remember { mutableStateOf(getLoadSheddingSchedule()) }
+    var batteryData by remember { mutableStateOf(getBatteryStatus()) }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -65,24 +76,56 @@ fun PowerStatusScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Load-shedding Schedule",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextPrimary
-                        )
+                        Column {
+                            Text(
+                                text = "Load-shedding Schedule",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Last updated: $lastRefreshed",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
                         Button(
-                            onClick = { /* Refresh schedule */ },
+                            onClick = {
+                                isRefreshing = true
+                            },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MediBlue
-                            )
+                            ),
+                            enabled = !isRefreshing
                         ) {
-                            Icon(
-                                imageVector = Icons.Filled.Refresh,
-                                contentDescription = "Refresh Schedule"
-                            )
+                            if (isRefreshing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Filled.Refresh,
+                                    contentDescription = "Refresh Schedule"
+                                )
+                            }
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Refresh Schedule")
+                            Text(if (isRefreshing) "Updating..." else "Refresh Schedule")
+                        }
+                    }
+
+                    // Refresh effect
+                    LaunchedEffect(isRefreshing) {
+                        if (isRefreshing) {
+                            delay(3000) // Simulate API call
+                            // Update schedule data
+                            scheduleData = getUpdatedLoadSheddingSchedule()
+                            batteryData = getUpdatedBatteryStatus()
+                            lastRefreshed =
+                                java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                                    .format(java.util.Date())
+                            isRefreshing = false
                         }
                     }
 
@@ -92,7 +135,7 @@ fun PowerStatusScreen(
                     Column(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        getLoadSheddingSchedule().forEach { scheduleItem ->
+                        scheduleData.forEach { scheduleItem ->
                             LoadSheddingItem(item = scheduleItem)
                         }
                     }
@@ -111,12 +154,34 @@ fun PowerStatusScreen(
                 Column(
                     modifier = Modifier.padding(20.dp)
                 ) {
-                    Text(
-                        text = "Battery Status",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Battery Status",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary
+                        )
+                        if (isRefreshing) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Refreshing...",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(20.dp))
 
@@ -124,7 +189,7 @@ fun PowerStatusScreen(
                     Column(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        getBatteryStatus().forEach { batteryItem ->
+                        batteryData.forEach { batteryItem ->
                             BatteryStatusItem(item = batteryItem)
                         }
                     }
@@ -304,7 +369,21 @@ private fun getLoadSheddingSchedule() = listOf(
     LoadSheddingScheduleItem("22:00 - 00:00", 2, "Johannesburg CBD", "Scheduled")
 )
 
+private fun getUpdatedLoadSheddingSchedule() = listOf(
+    LoadSheddingScheduleItem("14:00 - 16:00", 4, "Alexandra, Orange Farm", "Active"),
+    LoadSheddingScheduleItem("18:00 - 20:00", 6, "Soweto, Midrand", "Upcoming"),
+    LoadSheddingScheduleItem("22:00 - 00:00", 2, "Johannesburg CBD", "Scheduled")
+)
+
 private fun getBatteryStatus() = listOf(
+    BatteryStatusItem("Soweto Community", 95, "12 hours"),
+    BatteryStatusItem("Alexandra Primary", 87, "8 hours"),
+    BatteryStatusItem("Orange Farm", 23, "2 hours"),
+    BatteryStatusItem("Midrand Medical", 91, "10 hours"),
+    BatteryStatusItem("Sandton Clinic", 88, "9 hours")
+)
+
+private fun getUpdatedBatteryStatus() = listOf(
     BatteryStatusItem("Soweto Community", 95, "12 hours"),
     BatteryStatusItem("Alexandra Primary", 87, "8 hours"),
     BatteryStatusItem("Orange Farm", 23, "2 hours"),
