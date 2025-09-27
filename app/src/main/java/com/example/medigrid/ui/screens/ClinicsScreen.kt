@@ -3,458 +3,516 @@ package com.example.medigrid.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.medigrid.data.Clinic
 import com.example.medigrid.data.ClinicStatus
-import com.example.medigrid.data.SampleData
+import com.example.medigrid.data.DataManager
 import com.example.medigrid.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ClinicsScreen(
-    modifier: Modifier = Modifier,
-) {
-    var showAddClinicDialog by remember { mutableStateOf(false) }
+fun ClinicsScreen(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val dataManager = remember { DataManager.getInstance(context) }
+    val configuration = LocalConfiguration.current
+    
+    // Real-time data
+    var clinics by remember { mutableStateOf(emptyList<Clinic>()) }
     var isRefreshing by remember { mutableStateOf(false) }
-    var clinicsList by remember { mutableStateOf(SampleData.clinics) }
-
-    Card(
+    var showAddDialog by remember { mutableStateOf(false) }
+    
+    // Load real data
+    LaunchedEffect(Unit) {
+        clinics = dataManager.getClinics()
+    }
+    
+    // Refresh function
+    fun refreshData() {
+        isRefreshing = true
+        clinics = dataManager.getClinics()
+        isRefreshing = false
+    }
+    
+    // Responsive layout calculations
+    val screenWidth = configuration.screenWidthDp.dp
+    val isTablet = screenWidth > 600.dp
+    val gridColumns = if (isTablet) 2 else 1
+    
+    LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .padding(16.dp),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Healthcare Network Overview",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+        // Header
+        item {
+            ResponsiveHeader(
+                title = "Clinic Network",
+                subtitle = "${clinics.size} healthcare facilities",
+                onRefresh = { refreshData() },
+                onAdd = { showAddDialog = true },
+                isRefreshing = isRefreshing,
+                isTablet = isTablet
+            )
+        }
+
+        // Quick stats
+        item {
+            ResponsiveClinicStats(
+                clinics = clinics,
+                isTablet = isTablet
+            )
+        }
+
+        // Clinics grid
+        item {
+            if (clinics.isNotEmpty()) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(gridColumns),
+                    modifier = Modifier.height(400.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Button(
-                        onClick = { showAddClinicDialog = true },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MediBlue
+                    items(clinics) { clinic ->
+                        ResponsiveClinicCard(
+                            clinic = clinic,
+                            isTablet = isTablet,
+                            onClick = { /* Navigate to clinic details */ }
                         )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Add,
-                            contentDescription = "Add Clinic"
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Add Clinic")
-                    }
-                    OutlinedButton(
-                        onClick = { 
-                            isRefreshing = true
-                            // Simulate refresh delay
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MediBlue
-                        ),
-                        enabled = !isRefreshing
-                    ) {
-                        if (isRefreshing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Filled.Refresh,
-                                contentDescription = "Refresh"
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (isRefreshing) "Refreshing..." else "Refresh")
                     }
                 }
-            }
-
-            // Refresh effect
-            LaunchedEffect(isRefreshing) {
-                if (isRefreshing) {
-                    kotlinx.coroutines.delay(2000) // Simulate API call
-                    isRefreshing = false
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Clinics List
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(clinicsList) { clinic ->
-                    ClinicItem(clinic = clinic)
-                }
+            } else {
+                EmptyStateCard(isTablet = isTablet)
             }
         }
     }
 
-    // Add Clinic Dialog
-    if (showAddClinicDialog) {
+    // Add clinic dialog
+    if (showAddDialog) {
         AddClinicDialog(
-            onDismiss = { showAddClinicDialog = false },
-            onClinicAdded = { clinic: Clinic ->
-                showAddClinicDialog = false
-                clinicsList = clinicsList + clinic
+            onDismiss = { showAddDialog = false },
+            onAddClinic = { newClinic ->
+                dataManager.addClinic(newClinic)
+                clinics = dataManager.getClinics()
+                showAddDialog = false
             }
         )
     }
 }
 
 @Composable
-private fun ClinicItem(
-    clinic: Clinic,
-    modifier: Modifier = Modifier,
+private fun ResponsiveHeader(
+    title: String,
+    subtitle: String,
+    onRefresh: () -> Unit,
+    onAdd: () -> Unit,
+    isRefreshing: Boolean,
+    isTablet: Boolean
 ) {
-    val statusColor = when (clinic.status) {
-        ClinicStatus.ONLINE -> SuccessGreen
-        ClinicStatus.BACKUP -> WarningOrange
-        ClinicStatus.OFFLINE -> DangerRed
-    }
-
-    val statusText = when (clinic.status) {
-        ClinicStatus.ONLINE -> "Online"
-        ClinicStatus.BACKUP -> "Backup Power"
-        ClinicStatus.OFFLINE -> "Offline"
-    }
-
-    val statusBackground = when (clinic.status) {
-        ClinicStatus.ONLINE -> SuccessGreen.copy(alpha = 0.1f)
-        ClinicStatus.BACKUP -> WarningOrange.copy(alpha = 0.1f)
-        ClinicStatus.OFFLINE -> DangerRed.copy(alpha = 0.1f)
-    }
-
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MediBlue.copy(alpha = 0.05f))
-    ) {
+    if (isTablet) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Status indicator circle
-            Box(
-                modifier = Modifier
-                    .size(12.dp)
-                    .background(
-                        color = statusColor,
-                        shape = CircleShape
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = subtitle,
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FilledTonalButton(onClick = onRefresh) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Refresh")
+                }
+                Button(onClick = onAdd) {
+                    Icon(Icons.Default.Add, contentDescription = "Add")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Add Clinic")
+                }
+            }
+        }
+    } else {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = title,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
                     )
-            )
+                    Text(
+                        text = subtitle,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Button(
+                onClick = onAdd,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add")
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Add New Clinic")
+            }
+        }
+    }
+}
 
-            // Clinic information
-            Column(
-                modifier = Modifier.weight(1f)
+@Composable
+private fun ResponsiveClinicStats(
+    clinics: List<Clinic>,
+    isTablet: Boolean
+) {
+    val onlineClinics = clinics.count { it.status == ClinicStatus.ONLINE }
+    val totalPatients = clinics.sumOf { it.patientsToday }
+    val totalStaff = clinics.sumOf { it.staffCount }
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        if (isTablet) {
+            Row(
+                modifier = Modifier.padding(20.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                StatItem("Online", onlineClinics.toString(), Icons.Default.CheckCircle)
+                StatItem("Patients Today", totalPatients.toString(), Icons.Default.Person)
+                StatItem("Total Staff", totalStaff.toString(), Icons.Default.Group)
+                StatItem("Total Clinics", clinics.size.toString(), Icons.Default.LocationOn)
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier.height(120.dp).padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item { StatItem("Online", onlineClinics.toString(), Icons.Default.CheckCircle) }
+                item { StatItem("Patients", totalPatients.toString(), Icons.Default.Person) }
+                item { StatItem("Staff", totalStaff.toString(), Icons.Default.Group) }
+                item { StatItem("Total", clinics.size.toString(), Icons.Default.LocationOn) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatItem(
+    title: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = value,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = title,
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun ResponsiveClinicCard(
+    clinic: Clinic,
+    isTablet: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (isTablet) Modifier.height(180.dp) else Modifier.height(160.dp)),
+        onClick = onClick,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(if (isTablet) 20.dp else 16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = clinic.name,
-                    fontSize = 16.sp,
+                    fontSize = if (isTablet) 16.sp else 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
+                    modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "${clinic.patientsToday} patients today • Staff: ${clinic.staffCount} • Power: ${clinic.powerStatus}",
-                    fontSize = 12.sp,
-                    color = TextSecondary
+                
+                StatusBadge(
+                    status = clinic.status,
+                    isCompact = !isTablet
                 )
             }
-
-            // Status badge
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = statusBackground)
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = clinic.address,
+                fontSize = if (isTablet) 14.sp else 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                InfoChip(
+                    icon = Icons.Default.Person,
+                    text = "${clinic.patientsToday}",
+                    label = "Patients",
+                    isCompact = !isTablet
+                )
+                InfoChip(
+                    icon = Icons.Default.Group,
+                    text = "${clinic.staffCount}",
+                    label = "Staff",
+                    isCompact = !isTablet
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.PowerSettingsNew,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = statusText,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = statusColor,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    text = clinic.powerStatus,
+                    fontSize = if (isTablet) 12.sp else 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddClinicDialog(
-    onDismiss: () -> Unit,
-    onClinicAdded: (Clinic) -> Unit,
+private fun StatusBadge(
+    status: ClinicStatus,
+    isCompact: Boolean
 ) {
-    var name by remember { mutableStateOf("") }
-    var location by remember { mutableStateOf("") }
-    var staffCount by remember { mutableStateOf("") }
-    var facilityType by remember { mutableStateOf("") }
-    var powerSource by remember { mutableStateOf("") }
-    var selectedStatus by remember { mutableStateOf(ClinicStatus.ONLINE) }
-    var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf("") }
+    val (color, text) = when (status) {
+        ClinicStatus.ONLINE -> MaterialTheme.colorScheme.primary to "Online"
+        ClinicStatus.BACKUP -> MaterialTheme.colorScheme.secondary to "Backup"
+        ClinicStatus.OFFLINE -> MaterialTheme.colorScheme.error to "Offline"
+    }
+    
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = color.copy(alpha = 0.1f),
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = text,
+            fontSize = if (isCompact) 10.sp else 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = color,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
 
-    val facilityTypes = listOf(
-        "Community Health Centre",
-        "Primary Healthcare Clinic", 
-        "District Hospital",
-        "Regional Hospital",
-        "Specialized Clinic",
-        "Mobile Clinic"
-    )
+@Composable
+private fun InfoChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    label: String,
+    isCompact: Boolean
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(if (isCompact) 14.dp else 16.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Column {
+            Text(
+                text = text,
+                fontSize = if (isCompact) 12.sp else 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = label,
+                fontSize = if (isCompact) 8.sp else 10.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
 
-    val powerSources = listOf(
-        "Grid Connected",
-        "Solar + Grid Hybrid",
-        "Generator Backup",
-        "Battery Backup",
-        "Off-Grid Solar"
-    )
-
-    val statusOptions = mapOf(
-        ClinicStatus.ONLINE to "Online - Fully Operational",
-        ClinicStatus.BACKUP to "Backup Power - Limited Operations",
-        ClinicStatus.OFFLINE to "Offline - Maintenance Required"
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
+@Composable
+private fun EmptyStateCard(isTablet: Boolean) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(if (isTablet) 48.dp else 32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Add Clinic",
-                    tint = MaterialTheme.colorScheme.primary
+                    Icons.Default.LocationOn,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (isTablet) 64.dp else 48.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Add New Healthcare Facility")
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "No Clinics Found",
+                    fontSize = if (isTablet) 20.sp else 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "Add your first clinic to get started",
+                    fontSize = if (isTablet) 14.sp else 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (errorMessage.isNotEmpty()) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
-                    ) {
-                        Text(
-                            text = errorMessage,
-                            modifier = Modifier.padding(12.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
+        }
+    }
+}
 
+@Composable
+private fun AddClinicDialog(
+    onDismiss: () -> Unit,
+    onAddClinic: (Clinic) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
+    var province by remember { mutableStateOf("") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add New Clinic") },
+        text = {
+            Column {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Facility Name") },
-                    placeholder = { Text("Soweto Community Health Centre") },
+                    label = { Text("Clinic Name") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
-
+                Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
-                    value = location,
-                    onValueChange = { location = it },
-                    label = { Text("Location/Address") },
-                    placeholder = { Text("123 Main Road, Soweto, Johannesburg") },
+                    value = address,
+                    onValueChange = { address = it },
+                    label = { Text("Address") },
                     modifier = Modifier.fillMaxWidth(),
-                    maxLines = 2
+                    singleLine = true
                 )
-
-                // Facility Type Selection
-                var typeExpanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = typeExpanded,
-                    onExpandedChange = { typeExpanded = !typeExpanded }
-                ) {
-                    OutlinedTextField(
-                        value = facilityType,
-                        onValueChange = { },
-                        readOnly = true,
-                        label = { Text("Facility Type") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeExpanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = typeExpanded,
-                        onDismissRequest = { typeExpanded = false }
-                    ) {
-                        facilityTypes.forEach { type ->
-                            DropdownMenuItem(
-                                text = { Text(type) },
-                                onClick = {
-                                    facilityType = type
-                                    typeExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = staffCount,
-                        onValueChange = { staffCount = it },
-                        label = { Text("Staff Count") },
-                        placeholder = { Text("25") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-
-                    // Power Source Selection
-                    var powerExpanded by remember { mutableStateOf(false) }
-                    ExposedDropdownMenuBox(
-                        expanded = powerExpanded,
-                        onExpandedChange = { powerExpanded = !powerExpanded },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        OutlinedTextField(
-                            value = powerSource,
-                            onValueChange = { },
-                            readOnly = true,
-                            label = { Text("Power Source") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = powerExpanded) },
-                            modifier = Modifier
-                                .menuAnchor()
-                                .fillMaxWidth()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = powerExpanded,
-                            onDismissRequest = { powerExpanded = false }
-                        ) {
-                            powerSources.forEach { source ->
-                                DropdownMenuItem(
-                                    text = { Text(source) },
-                                    onClick = {
-                                        powerSource = source
-                                        powerExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Status Selection
-                var statusExpanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = statusExpanded,
-                    onExpandedChange = { statusExpanded = !statusExpanded }
-                ) {
-                    OutlinedTextField(
-                        value = statusOptions[selectedStatus] ?: "",
-                        onValueChange = { },
-                        readOnly = true,
-                        label = { Text("Operational Status") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = statusExpanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = statusExpanded,
-                        onDismissRequest = { statusExpanded = false }
-                    ) {
-                        statusOptions.forEach { (status, displayName) ->
-                            DropdownMenuItem(
-                                text = { Text(displayName) },
-                                onClick = {
-                                    selectedStatus = status
-                                    statusExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                ) {
-                    Text(
-                        text = "🏥 This facility will be added to the healthcare network and monitored for power status and patient capacity.",
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(8.dp)
-                    )
-                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = province,
+                    onValueChange = { province = it },
+                    label = { Text("Province") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    if (name.isBlank() || location.isBlank() || facilityType.isBlank()) {
-                        errorMessage = "Please fill in all required fields"
-                        return@Button
+                    if (name.isNotBlank() && address.isNotBlank() && province.isNotBlank()) {
+                        val newClinic = Clinic(
+                            id = "clinic_${System.currentTimeMillis()}",
+                            name = name,
+                            patientsToday = 0,
+                            staffCount = 1,
+                            powerStatus = "Grid Connected",
+                            status = ClinicStatus.ONLINE,
+                            latitude = -26.2041,
+                            longitude = 28.0473,
+                            province = province,
+                            address = address
+                        )
+                        onAddClinic(newClinic)
                     }
-
-                    isLoading = true
-                    errorMessage = ""
-
-                    // Create new clinic
-                    val newClinic = Clinic(
-                        id = "C${System.currentTimeMillis()}",
-                        name = name,
-                        patientsToday = (5..50).random(),
-                        staffCount = staffCount.toIntOrNull() ?: (5..30).random(),
-                        powerStatus = powerSource.ifBlank { "Grid Connected" },
-                        status = selectedStatus
-                    )
-
-                    onClinicAdded(newClinic)
-                    isLoading = false
-                },
-                enabled = !isLoading && name.isNotBlank() && location.isNotBlank() && facilityType.isNotBlank()
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp))
-                } else {
-                    Text("Add Facility")
                 }
+            ) {
+                Text("Add Clinic")
             }
         },
         dismissButton = {

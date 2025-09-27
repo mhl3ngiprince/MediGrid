@@ -8,9 +8,14 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -21,356 +26,344 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.example.medigrid.data.Alert
 import com.example.medigrid.data.AlertLevel
-import com.example.medigrid.data.SampleData
+import com.example.medigrid.security.FirebaseDataService
+import com.example.medigrid.security.SecurityLogger
+import com.example.medigrid.data.DataManager
 import com.example.medigrid.data.StatCard
 import com.example.medigrid.ui.components.StatCardComponent
 import com.example.medigrid.ui.theme.*
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EmergencyAlertsScreen(
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier
 ) {
     var showNewAlertDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val dataManager = remember { DataManager.getInstance(context) }
+    
+    // Firebase integration for real-time alerts (optional)
+    val firebaseDataService = remember { FirebaseDataService.getInstance(context) }
+    val connectionStatus by firebaseDataService.connectionStatus.collectAsState()
+    
+    // Log Firebase connection status
+    LaunchedEffect(connectionStatus) {
+        if (connectionStatus) {
+            SecurityLogger.logSecurityEvent(
+                "emergency_screen_firebase_connected",
+                mapOf("screen" to "emergency_alerts"),
+                context
+            )
+        }
+    }
+
+    // Real-time data
+    var alerts by remember { mutableStateOf(dataManager.getAlerts()) }
+    var selectedFilter by remember { mutableStateOf(AlertLevel.URGENT) }
+    var showAddAlert by remember { mutableStateOf(false) }
+    var showFilterOptions by remember { mutableStateOf(false) }
+    
+    // Real-time Firebase synchronization
+    val emergencyAlerts by firebaseDataService.emergencyAlerts.collectAsState()
+    
+    // Convert Firebase data to Alert objects
+    val firebaseAlertsConverted = emergencyAlerts.mapNotNull { alertMap ->
+        try {
+            Alert(
+                id = alertMap["id"] as? String ?: "",
+                title = alertMap["title"] as? String ?: "",
+                location = alertMap["location"] as? String ?: "",
+                description = alertMap["description"] as? String ?: "",
+                time = "Real-time",
+                level = AlertLevel.valueOf(alertMap["level"] as? String ?: "INFO"),
+                isActive = alertMap["isActive"] as? Boolean ?: true
+            )
+        } catch (e: Exception) { null }
+    }
+    
+    // Use Firebase data if available, otherwise fall back to local data
+    val displayAlerts = if (firebaseAlertsConverted.isNotEmpty()) firebaseAlertsConverted else alerts
 
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Emergency Statistics
+        // Header
+        item {
+            EmergencyHeader(
+                alertCount = displayAlerts.count { it.level == AlertLevel.URGENT },
+                onAddAlert = { showNewAlertDialog = true },
+                onFilter = { showFilterOptions = true }
+            )
+        }
+
+        // Statistics
+        item {
+            Text(
+                text = "Emergency Statistics",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
         item {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.height(280.dp)
+                modifier = Modifier.height(160.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(getEmergencyStats()) { stat ->
-                    StatCardComponent(statCard = stat)
+                val stats = getEmergencyStats(displayAlerts)
+                items(stats.size) { index ->
+                    StatCardComponent(statCard = stats[index])
                 }
             }
         }
 
-        // Active Emergencies Section
+        // Active Alerts
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                colors = CardDefaults.cardColors(containerColor = CardBackground)
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp)
-                ) {
-                    // Header
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Emergency Alert System",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextPrimary
-                        )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { showNewAlertDialog = true },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MediBlue
-                                )
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Add,
-                                    contentDescription = "New Alert"
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("New Alert")
-                            }
-                            OutlinedButton(
-                                onClick = { /* View history */ },
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = MediBlue
-                                )
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.List,
-                                    contentDescription = "View History"
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("View History")
-                            }
-                        }
-                    }
+            Text(
+                text = "Active Alerts",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
 
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // Emergency Alerts
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // Add more detailed emergency alerts
-                        getDetailedEmergencyAlerts().forEach { alert ->
-                            DetailedEmergencyAlertItem(alert = alert)
-                        }
-                    }
-                }
+        if (displayAlerts.isNotEmpty()) {
+            items(displayAlerts.size) { index ->
+                EmergencyAlertCard(alert = displayAlerts[index])
+            }
+        } else {
+            item {
+                EmptyAlertsCard()
             }
         }
     }
 
-    // New Alert Dialog
+    // Add Alert Dialog
     if (showNewAlertDialog) {
-        NewAlertDialog(
+        AddEmergencyAlertDialog(
             onDismiss = { showNewAlertDialog = false },
-            onAlertCreated = { alert ->
+            onAddAlert = { newAlert ->
+                dataManager.addAlert(newAlert)
+                alerts = dataManager.getAlerts()
                 showNewAlertDialog = false
-                // In a real app, this would send to emergency system
             }
         )
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewAlertDialog(
-    onDismiss: () -> Unit,
-    onAlertCreated: (DetailedEmergencyAlert) -> Unit,
+private fun EmergencyHeader(
+    alertCount: Int,
+    onAddAlert: () -> Unit,
+    onFilter: () -> Unit
 ) {
-    var title by remember { mutableStateOf("") }
-    var location by remember { mutableStateOf("") }
-    var patientInfo by remember { mutableStateOf("") }
-    var symptoms by remember { mutableStateOf("") }
-    var selectedLevel by remember { mutableStateOf(AlertLevel.WARNING) }
-    var description by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf("") }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column {
+            Text(
+                text = "Emergency Alerts",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = "$alertCount active emergencies",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            IconButton(onClick = onFilter) {
+                Icon(Icons.Default.FilterList, contentDescription = "Filter")
+            }
+            
+            Button(onClick = onAddAlert) {
+                Icon(Icons.Default.Add, contentDescription = "Add")
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Add Alert")
+            }
+        }
+    }
+}
 
-    val levelOptions = mapOf(
-        AlertLevel.URGENT to "URGENT - Life Threatening",
-        AlertLevel.WARNING to "HIGH - Requires Attention", 
-        AlertLevel.INFO to "INFO - General Alert"
-    )
+@Composable
+private fun EmergencyAlertCard(alert: Alert) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = when (alert.level) {
+                AlertLevel.URGENT -> MaterialTheme.colorScheme.errorContainer
+                AlertLevel.WARNING -> MaterialTheme.colorScheme.secondaryContainer
+                AlertLevel.INFO -> MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = when (alert.level) {
+                    AlertLevel.URGENT -> Icons.Default.Warning
+                    AlertLevel.WARNING -> Icons.Default.Info
+                    AlertLevel.INFO -> Icons.Default.Info
+                },
+                contentDescription = null,
+                tint = when (alert.level) {
+                    AlertLevel.URGENT -> MaterialTheme.colorScheme.error
+                    AlertLevel.WARNING -> MaterialTheme.colorScheme.secondary
+                    AlertLevel.INFO -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(24.dp)
+            )
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = alert.title,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = alert.description,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "${alert.location} • ${alert.time}",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
 
-    val locationOptions = listOf(
-        "Soweto Community Clinic",
-        "Alexandra Primary Healthcare", 
-        "Orange Farm Community Health",
-        "Midrand Medical Centre",
-        "Johannesburg General Hospital",
-        "Other Location"
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
+@Composable
+private fun EmptyAlertsCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(48.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = "New Alert",
-                    tint = MaterialTheme.colorScheme.error
+                    Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Create Emergency Alert")
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "No Active Alerts",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "All systems are operating normally",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-        },
+        }
+    }
+}
+
+@Composable
+private fun AddEmergencyAlertDialog(
+    onDismiss: () -> Unit,
+    onAddAlert: (Alert) -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var location by remember { mutableStateOf("") }
+    var selectedLevel by remember { mutableStateOf(AlertLevel.INFO) }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Emergency Alert") },
         text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (errorMessage.isNotEmpty()) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
-                    ) {
-                        Text(
-                            text = errorMessage,
-                            modifier = Modifier.padding(12.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-
-                // Alert Level Selection
-                var levelExpanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = levelExpanded,
-                    onExpandedChange = { levelExpanded = !levelExpanded }
-                ) {
-                    OutlinedTextField(
-                        value = levelOptions[selectedLevel] ?: "",
-                        onValueChange = { },
-                        readOnly = true,
-                        label = { Text("Alert Level") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = levelExpanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = when(selectedLevel) {
-                                AlertLevel.URGENT -> DangerRed
-                                AlertLevel.WARNING -> WarningOrange
-                                AlertLevel.INFO -> MediBlue
-                            }
-                        )
-                    )
-                    ExposedDropdownMenu(
-                        expanded = levelExpanded,
-                        onDismissRequest = { levelExpanded = false }
-                    ) {
-                        levelOptions.forEach { (level, displayName) ->
-                            DropdownMenuItem(
-                                text = { Text(displayName) },
-                                onClick = {
-                                    selectedLevel = level
-                                    levelExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
+            Column {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
                     label = { Text("Alert Title") },
-                    placeholder = { Text("Emergency: Cardiac Event") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
-
-                // Location Selection
-                var locationExpanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = locationExpanded,
-                    onExpandedChange = { locationExpanded = !locationExpanded }
-                ) {
-                    OutlinedTextField(
-                        value = location,
-                        onValueChange = { location = it },
-                        label = { Text("Location") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = locationExpanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = locationExpanded,
-                        onDismissRequest = { locationExpanded = false }
-                    ) {
-                        locationOptions.forEach { loc ->
-                            DropdownMenuItem(
-                                text = { Text(loc) },
-                                onClick = {
-                                    location = loc
-                                    locationExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                OutlinedTextField(
-                    value = patientInfo,
-                    onValueChange = { patientInfo = it },
-                    label = { Text("Patient Information") },
-                    placeholder = { Text("Male, 58 years") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = symptoms,
-                    onValueChange = { symptoms = it },
-                    label = { Text("Symptoms/Situation") },
-                    placeholder = { Text("Chest pain, shortness of breath") },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 2
-                )
-
+                Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    label = { Text("Additional Details") },
-                    placeholder = { Text("Any additional emergency information...") },
+                    label = { Text("Description") },
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = 3
                 )
-
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = when(selectedLevel) {
-                            AlertLevel.URGENT -> DangerRed.copy(alpha = 0.1f)
-                            AlertLevel.WARNING -> WarningOrange.copy(alpha = 0.1f)
-                            AlertLevel.INFO -> MediBlue.copy(alpha = 0.1f)
-                        }
-                    )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = location,
+                    onValueChange = { location = it },
+                    label = { Text("Location") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = "🚨 This alert will be immediately dispatched to emergency responders and medical staff.",
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(8.dp),
-                        color = when(selectedLevel) {
-                            AlertLevel.URGENT -> DangerRed
-                            AlertLevel.WARNING -> WarningOrange
-                            AlertLevel.INFO -> MediBlue
-                        }
-                    )
+                    AlertLevel.values().forEach { level ->
+                        FilterChip(
+                            onClick = { selectedLevel = level },
+                            label = { Text(level.name) },
+                            selected = selectedLevel == level,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    if (title.isBlank() || location.isBlank()) {
-                        errorMessage = "Please fill in title and location"
-                        return@Button
+                    if (title.isNotBlank() && description.isNotBlank() && location.isNotBlank()) {
+                        val newAlert = Alert(
+                            id = "alert_${System.currentTimeMillis()}",
+                            title = title,
+                            description = description,
+                            location = location,
+                            time = "Just now",
+                            level = selectedLevel
+                        )
+                        onAddAlert(newAlert)
                     }
-
-                    isLoading = true
-                    errorMessage = ""
-
-                    // Create new alert
-                    val newAlert = DetailedEmergencyAlert(
-                        id = "E${System.currentTimeMillis()}",
-                        title = title,
-                        location = location,
-                        patientInfo = patientInfo,
-                        symptoms = symptoms,
-                        status = "Active",
-                        time = "Just now",
-                        level = selectedLevel
-                    )
-
-                    onAlertCreated(newAlert)
-                    isLoading = false
-                },
-                enabled = !isLoading && title.isNotBlank() && location.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = when(selectedLevel) {
-                        AlertLevel.URGENT -> DangerRed
-                        AlertLevel.WARNING -> WarningOrange
-                        AlertLevel.INFO -> MediBlue
-                    }
-                )
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp))
-                } else {
-                    Text("Create Alert")
                 }
+            ) {
+                Text("Add Alert")
             }
         },
         dismissButton = {
@@ -381,186 +374,33 @@ fun NewAlertDialog(
     )
 }
 
-@Composable
-private fun DetailedEmergencyAlertItem(
-    alert: DetailedEmergencyAlert,
-    modifier: Modifier = Modifier,
-) {
-    val alertColor = when (alert.level) {
-        AlertLevel.URGENT -> DangerRed
-        AlertLevel.WARNING -> WarningOrange
-        AlertLevel.INFO -> MediBlue
-    }
-
-    val alertBackgroundColor = when (alert.level) {
-        AlertLevel.URGENT -> DangerRed.copy(alpha = 0.1f)
-        AlertLevel.WARNING -> WarningOrange.copy(alpha = 0.1f)
-        AlertLevel.INFO -> MediBlue.copy(alpha = 0.1f)
-    }
-
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = alertBackgroundColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Alert level indicator
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .height(80.dp)
-                    .background(
-                        color = alertColor,
-                        shape = RoundedCornerShape(2.dp)
-                    )
-            )
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = alert.title,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Location: ${alert.location}",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = TextPrimary
-                        )
-                        if (alert.patientInfo.isNotEmpty()) {
-                            Text(
-                                text = "Patient: ${alert.patientInfo}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = TextPrimary
-                            )
-                        }
-                        if (alert.symptoms.isNotEmpty()) {
-                            Text(
-                                text = "Symptoms: ${alert.symptoms}",
-                                fontSize = 12.sp,
-                                color = TextSecondary
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "${alert.status} • ${alert.time}",
-                            fontSize = 10.sp,
-                            color = TextSecondary
-                        )
-                    }
-
-                    // Action buttons
-                    if (alert.level == AlertLevel.URGENT) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { /* Dispatch */ },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = alertColor
-                                ),
-                                modifier = Modifier.height(32.dp)
-                            ) {
-                                Text(
-                                    text = "Dispatch",
-                                    fontSize = 10.sp,
-                                    color = Color.White
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = { /* Details */ },
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = alertColor
-                                ),
-                                modifier = Modifier.height(32.dp)
-                            ) {
-                                Text(
-                                    text = "Details",
-                                    fontSize = 10.sp
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-data class DetailedEmergencyAlert(
-    val id: String,
-    val title: String,
-    val location: String,
-    val patientInfo: String,
-    val symptoms: String,
-    val status: String,
-    val time: String,
-    val level: AlertLevel,
-)
-
-private fun getEmergencyStats() = listOf(
-    StatCard("Active Emergencies", "5", "Requires Action", false, Icons.Filled.Warning),
-    StatCard("Resolved Today", "23", "Good Response Time", true, Icons.Filled.Check),
-    StatCard("Avg Response Time", "12 min", "Under Target", true, Icons.Filled.Person),
-    StatCard("Success Rate", "96%", "Excellent Performance", true, Icons.Filled.Check)
-)
-
-private fun getDetailedEmergencyAlerts() = listOf(
-    DetailedEmergencyAlert(
-        "E001",
-        "CRITICAL: Cardiac Emergency",
-        "Soweto Community Clinic",
-        "Male, 58 years",
-        "Chest pain, shortness of breath",
-        "Active",
-        "2 minutes ago",
-        AlertLevel.URGENT
+private fun getEmergencyStats(alerts: List<Alert>) = listOf(
+    StatCard(
+        title = "Active Emergencies",
+        value = alerts.count { it.level == AlertLevel.URGENT }.toString(),
+        change = "Requires Action",
+        isPositive = false,
+        icon = Icons.Filled.Warning
     ),
-    DetailedEmergencyAlert(
-        "E002",
-        "URGENT: Labor Emergency",
-        "Orange Farm Community Health",
-        "Female, 24 years",
-        "Complications during delivery",
-        "Active",
-        "8 minutes ago",
-        AlertLevel.URGENT
+    StatCard(
+        title = "Total Alerts",
+        value = alerts.size.toString(),
+        change = "All levels",
+        isPositive = true,
+        icon = Icons.Filled.Notifications
     ),
-    DetailedEmergencyAlert(
-        "E003",
-        "HIGH: Fever & Seizure",
-        "Alexandra Primary Healthcare",
-        "Child, 3 years",
-        "High fever (39.5°C), seizure activity",
-        "Active",
-        "15 minutes ago",
-        AlertLevel.WARNING
+    StatCard(
+        title = "Warning Level",
+        value = alerts.count { it.level == AlertLevel.WARNING }.toString(),
+        change = "Monitor closely",
+        isPositive = true,
+        icon = Icons.Filled.Info
     ),
-    DetailedEmergencyAlert(
-        "E004",
-        "SYSTEM: Power Outage Alert",
-        "Midrand Medical Centre",
-        "",
-        "Battery Level: 87% (6 hours remaining)",
-        "Active",
-        "22 minutes ago",
-        AlertLevel.INFO
+    StatCard(
+        title = "Info Level",
+        value = alerts.count { it.level == AlertLevel.INFO }.toString(),
+        change = "Routine updates",
+        isPositive = true,
+        icon = Icons.Filled.CheckCircle
     )
 )

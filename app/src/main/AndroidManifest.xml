@@ -16,6 +16,11 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <!-- Telephony features for telemedicine -->
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
+
     <!-- Storage permissions for medical documents -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 
@@ -28,6 +33,12 @@
 
     <!-- Microphone permission for chatbot voice input -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Telemedicine communication permissions -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
     <application
         android:allowBackup="false"

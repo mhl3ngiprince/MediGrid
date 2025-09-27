@@ -4,26 +4,28 @@ import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.medigrid.data.DataManager
 import com.example.medigrid.data.Alert
 import com.example.medigrid.data.AlertLevel
-import com.example.medigrid.data.SampleData
+import com.example.medigrid.data.StatCard
 import com.example.medigrid.ui.components.StatCardComponent
 import com.example.medigrid.ui.theme.*
 
@@ -32,6 +34,28 @@ import com.example.medigrid.ui.theme.*
 fun DashboardScreen(
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val dataManager = remember { DataManager.getInstance(context) }
+    
+    // Real-time data
+    var stats by remember { mutableStateOf(emptyList<StatCard>()) }
+    var alerts by remember { mutableStateOf(emptyList<Alert>()) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    
+    // Load real data
+    LaunchedEffect(Unit) {
+        stats = dataManager.getStats()
+        alerts = dataManager.getAlerts().take(3) // Show recent alerts
+    }
+    
+    // Refresh function
+    fun refreshData() {
+        isRefreshing = true
+        stats = dataManager.getStats()
+        alerts = dataManager.getAlerts().take(3)
+        isRefreshing = false
+    }
+
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val screenWidth = configuration.screenWidthDp
@@ -54,15 +78,49 @@ fun DashboardScreen(
             .padding(contentPadding),
         verticalArrangement = Arrangement.spacedBy(itemSpacing)
     ) {
+        // Header
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Healthcare Dashboard",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Real-time network overview",
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                FilledTonalButton(
+                    onClick = { refreshData() }
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "Refresh"
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Refresh")
+                }
+            }
+        }
+
         // Statistics Grid
         item {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(if (gridColumns > 2) 2 else gridColumns),
-                horizontalArrangement = Arrangement.spacedBy(if (screenWidth < 600) 8.dp else 16.dp),
-                verticalArrangement = Arrangement.spacedBy(if (screenWidth < 600) 8.dp else 16.dp),
-                modifier = Modifier.height(if (gridColumns == 1) 600.dp else 280.dp)
+                columns = GridCells.Fixed(gridColumns),
+                modifier = Modifier.height(240.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(SampleData.stats) { stat ->
+                items(stats) { stat ->
                     StatCardComponent(statCard = stat)
                 }
             }
@@ -70,126 +128,51 @@ fun DashboardScreen(
 
         // Recent Alerts Section
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                colors = CardDefaults.cardColors(containerColor = CardBackground)
-            ) {
-                Column(
-                    modifier = Modifier.padding(if (screenWidth < 600) 16.dp else 20.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Recent Alerts",
-                            fontSize = if (screenWidth < 600) 18.sp else 20.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextPrimary
-                        )
-                        OutlinedButton(
-                            onClick = { /* Navigate to alerts */ },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MediBlue
-                            ),
-                            modifier = Modifier.then(
-                                if (screenWidth < 600) Modifier.height(32.dp)
-                                else Modifier
-                            )
-                        ) {
-                            Text(
-                                "View All",
-                                fontSize = if (screenWidth < 600) 12.sp else 14.sp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        SampleData.alerts.forEach { alert ->
-                            AlertItem(
-                                alert = alert,
-                                isCompact = screenWidth < 600
-                            )
-                        }
-                    }
-                }
-            }
+            Text(
+                text = "Recent Alerts",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
 
-        // Network Map Placeholder - Adaptive height
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                colors = CardDefaults.cardColors(containerColor = CardBackground)
-            ) {
-                Column(
-                    modifier = Modifier.padding(if (screenWidth < 600) 16.dp else 20.dp)
+        // Alert items
+        if (alerts.isNotEmpty()) {
+            items(alerts) { alert ->
+                AlertCard(alert = alert)
+            }
+        } else {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Network Map",
-                            fontSize = if (screenWidth < 600) 18.sp else 20.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextPrimary
-                        )
-                        Button(
-                            onClick = { /* Expand map */ },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MediBlue
-                            ),
-                            modifier = if (screenWidth < 600) Modifier.height(32.dp) else Modifier
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Refresh,
-                                contentDescription = "Expand"
-                            )
-                            if (screenWidth >= 600) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Full View")
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Map placeholder - responsive height
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(if (screenWidth < 600) 150.dp else 200.dp)
-                            .background(
-                                color = MediBlue,
-                                shape = RoundedCornerShape(12.dp)
-                            ),
+                            .padding(32.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(
-                                text = "Interactive Map Loading...",
-                                color = Color.White,
-                                fontSize = if (screenWidth < 600) 14.sp else 16.sp,
-                                fontWeight = FontWeight.Medium
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "28 clinics • 5 provinces • Real-time status",
-                                color = Color.White.copy(alpha = 0.8f),
-                                fontSize = if (screenWidth < 600) 12.sp else 14.sp
+                                text = "No Active Alerts",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "All systems operating normally",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -200,65 +183,51 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun AlertItem(
-    alert: Alert,
-    isCompact: Boolean = false,
-    modifier: Modifier = Modifier,
-) {
-    val alertColor = when (alert.level) {
-        AlertLevel.URGENT -> DangerRed
-        AlertLevel.WARNING -> WarningOrange
-        AlertLevel.INFO -> MediBlue
-    }
-
-    val alertBackgroundColor = when (alert.level) {
-        AlertLevel.URGENT -> DangerRed.copy(alpha = 0.1f)
-        AlertLevel.WARNING -> WarningOrange.copy(alpha = 0.1f)
-        AlertLevel.INFO -> MediBlue.copy(alpha = 0.1f)
-    }
-
+private fun AlertCard(alert: Alert) {
     Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = alertBackgroundColor)
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = when (alert.level) {
+                AlertLevel.URGENT -> MaterialTheme.colorScheme.errorContainer
+                AlertLevel.WARNING -> MaterialTheme.colorScheme.secondaryContainer
+                AlertLevel.INFO -> MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(if (isCompact) 12.dp else 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Alert indicator
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .height(if (isCompact) 30.dp else 40.dp)
-                    .background(
-                        color = alertColor,
-                        shape = RoundedCornerShape(2.dp)
-                    )
+            Icon(
+                imageVector = when (alert.level) {
+                    AlertLevel.URGENT -> Icons.Default.Warning
+                    AlertLevel.WARNING -> Icons.Default.Info
+                    AlertLevel.INFO -> Icons.Default.Notifications
+                },
+                contentDescription = null,
+                tint = when (alert.level) {
+                    AlertLevel.URGENT -> MaterialTheme.colorScheme.error
+                    AlertLevel.WARNING -> MaterialTheme.colorScheme.secondary
+                    AlertLevel.INFO -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
             )
+            Spacer(modifier = Modifier.width(12.dp))
 
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = alert.title,
-                    fontSize = if (isCompact) 12.sp else 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
+                    fontSize = 14.sp
                 )
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = alert.description,
-                    fontSize = if (isCompact) 10.sp else 12.sp,
-                    color = TextSecondary
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = alert.time,
-                    fontSize = if (isCompact) 8.sp else 10.sp,
-                    color = TextSecondary
+                    text = "${alert.location} • ${alert.time}",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

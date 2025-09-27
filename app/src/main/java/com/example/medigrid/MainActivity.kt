@@ -29,16 +29,19 @@ import com.example.medigrid.ui.screens.ClinicsScreen
 import com.example.medigrid.ui.screens.DashboardScreen
 import com.example.medigrid.ui.screens.EmergencyAlertsScreen
 import com.example.medigrid.ui.screens.InventoryScreen
+import com.example.medigrid.ui.screens.LoadSheddingScreen
 import com.example.medigrid.ui.screens.LoginScreen
 import com.example.medigrid.ui.screens.NetworkMapScreen
 import com.example.medigrid.ui.screens.PatientsScreen
 import com.example.medigrid.ui.screens.PowerStatusScreen
+import com.example.medigrid.ui.screens.SecurePatientScreen
 import com.example.medigrid.ui.screens.SecurityDashboardScreen
 import com.example.medigrid.ui.screens.SettingsScreen
+import com.example.medigrid.ui.screens.SymptomCheckerScreen
+import com.example.medigrid.ui.screens.TelemedicineScreen
 import com.example.medigrid.ui.theme.*
 import com.example.medigrid.security.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,11 +65,39 @@ fun MediGridApp() {
     // Initialize Firebase and security on first run
     LaunchedEffect(Unit) {
         try {
+            // Initialize Firebase with specific database URL
+            FirebaseConfig.initializeFirebase(context)
             SecurityConfig.initializeKeystore(context)
-            // Firebase is automatically initialized with google-services.json
+            
+            // Validate Firebase database connection
+            val isConnected = FirebaseConfig.validateConnection(context)
+            Log.i("MediGrid", "Firebase database connected: $isConnected to ${FirebaseConfig.DATABASE_URL}")
+
+            // Initialize Firebase Data Service
+            val firebaseDataService = FirebaseDataService.getInstance(context)
+            firebaseDataService.enableOfflinePersistence()
+
+            // Get FCM token for notifications
+            firebaseDataService.getFCMToken { token ->
+                SecurityLogger.logSecurityEvent(
+                    "fcm_token_obtained",
+                    mapOf(
+                        "token_length" to token.length,
+                        "database_url" to FirebaseConfig.DATABASE_URL
+                    ),
+                    context
+                )
+            }
+
         } catch (e: Exception) {
             // Log the error but don't crash the app
             Log.e("MediGrid", "Initialization error: ${e.message}")
+            SecurityLogger.logSecurityIncident(
+                "app_initialization_error",
+                "Failed to initialize Firebase: ${e.message}",
+                context,
+                SecurityConfig.RiskLevel.HIGH
+            )
         }
     }
 
@@ -287,62 +318,101 @@ private fun MainContent(
                 NavigationItem.DASHBOARD.route -> {
                     DashboardScreen()
                 }
+
                 NavigationItem.CLINICS.route -> {
                     ClinicsScreen()
                 }
+
                 NavigationItem.PATIENTS.route -> {
-                    // Check PHI access permissions
-                    if (currentUser?.let {
-                            HealthcareAuthService(context).hasPermission(it, "READ_PHI")
-                        } == true) {
+                    // Check PHI access permissions with null safety
+                    if (currentUser != null &&
+                        HealthcareAuthService(context).hasPermission(currentUser, "READ_PHI")
+                    ) {
                         PatientsScreen()
                     } else {
                         AccessDeniedScreen("READ_PHI")
                     }
                 }
+
                 NavigationItem.INVENTORY.route -> {
-                    // Check inventory permissions
-                    if (currentUser?.let {
-                            HealthcareAuthService(context).hasPermission(it, "MANAGE_INVENTORY")
-                        } == true) {
+                    // Check inventory permissions with null safety
+                    if (currentUser != null &&
+                        HealthcareAuthService(context).hasPermission(
+                            currentUser,
+                            "MANAGE_INVENTORY"
+                        )
+                    ) {
                         InventoryScreen()
                     } else {
                         InventoryScreen() // Allow read access for most roles
                     }
                 }
+
                 NavigationItem.EMERGENCIES.route -> {
-                    // Check emergency access permissions
-                    if (currentUser?.let {
-                            HealthcareAuthService(context).hasPermission(it, "EMERGENCY_ACCESS")
-                        } == true) {
+                    // Check emergency access permissions with null safety
+                    if (currentUser != null &&
+                        HealthcareAuthService(context).hasPermission(
+                            currentUser,
+                            "EMERGENCY_ACCESS"
+                        )
+                    ) {
                         EmergencyAlertsScreen()
                     } else {
                         AccessDeniedScreen("EMERGENCY_ACCESS")
                     }
                 }
+
                 NavigationItem.POWER.route -> {
                     PowerStatusScreen()
                 }
+
+                NavigationItem.LOAD_SHEDDING.route -> {
+                    LoadSheddingScreen(currentUser = currentUser)
+                }
+
                 NavigationItem.ANALYTICS.route -> {
                     AnalyticsScreen()
                 }
+
                 NavigationItem.CHATBOT.route -> {
-                    ChatbotScreen(
-                        currentUser = currentUser
-                    )
+                    ChatbotScreen(currentUser = currentUser)
                 }
+
                 NavigationItem.NETWORK_MAP.route -> {
                     NetworkMapScreen()
                 }
+
+                NavigationItem.SYMPTOM_CHECKER.route -> {
+                    SymptomCheckerScreen(currentUser = currentUser)
+                }
+
                 NavigationItem.SECURITY.route -> {
                     SecurityDashboardScreen(
                         currentUser = currentUser,
                         onNavigateBack = { /* Stay in security dashboard */ }
                     )
                 }
+
+                NavigationItem.SECURE_PATIENTS.route -> {
+                    // Check PHI access permissions with comprehensive null safety
+                    if (currentUser != null &&
+                        runCatching {
+                            HealthcareAuthService(context).hasPermission(currentUser, "READ_PHI")
+                        }.getOrElse { false }
+                    ) {
+                        SecurePatientScreen(currentUser = currentUser)
+                    } else {
+                        AccessDeniedScreen("READ_PHI")
+                    }
+                }
+                NavigationItem.TELEMEDICINE.route -> {
+                    TelemedicineScreen(currentUser = currentUser)
+                }
+
                 NavigationItem.SETTINGS.route -> {
                     SettingsScreen()
                 }
+
                 else -> {
                     PlaceholderScreen(getPageTitle(currentRoute))
                 }
@@ -468,6 +538,49 @@ private fun PlaceholderScreen(
     }
 }
 
+@Composable
+private fun ErrorScreen(
+    title: String,
+    message: String,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = title,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = message,
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = onRetry) {
+                    Text("Retry")
+                }
+            }
+        }
+    }
+}
+
 private fun getPageTitle(route: String): String {
     return when (route) {
         NavigationItem.DASHBOARD.route -> "Healthcare Network Dashboard"
@@ -476,10 +589,14 @@ private fun getPageTitle(route: String): String {
         NavigationItem.INVENTORY.route -> "Medicine Inventory Control"
         NavigationItem.EMERGENCIES.route -> "Emergency Alert Center"
         NavigationItem.POWER.route -> "Power Status Monitor"
+        NavigationItem.LOAD_SHEDDING.route -> "Load Shedding Management"
         NavigationItem.ANALYTICS.route -> "Healthcare Analytics"
         NavigationItem.CHATBOT.route -> "MediBot AI Assistant"
         NavigationItem.NETWORK_MAP.route -> "Healthcare Network Map"
+        NavigationItem.SYMPTOM_CHECKER.route -> "Symptom Checker"
         NavigationItem.SECURITY.route -> "Security Dashboard"
+        NavigationItem.SECURE_PATIENTS.route -> "Secure Patient Management"
+        NavigationItem.TELEMEDICINE.route -> "Telemedicine"
         NavigationItem.SETTINGS.route -> "System Settings"
         else -> "MediGrid Dashboard"
     }
