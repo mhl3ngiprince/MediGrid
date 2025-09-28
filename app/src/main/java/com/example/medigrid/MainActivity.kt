@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.medigrid.data.NavigationItem
+import com.example.medigrid.data.RealTimeDataService
 import com.example.medigrid.ui.components.NavigationDrawer
 import com.example.medigrid.ui.screens.AnalyticsScreen
 import com.example.medigrid.ui.screens.ChatbotScreen
@@ -62,13 +63,13 @@ fun MediGridApp() {
     var currentUser by remember { mutableStateOf<HealthcareAuthService.HealthcareUser?>(null) }
     var showSecurityDashboard by remember { mutableStateOf(false) }
 
-    // Initialize Firebase and security on first run
+    // Initialize Firebase, RealTimeDataService, and security on first run
     LaunchedEffect(Unit) {
         try {
             // Initialize Firebase with specific database URL
             FirebaseConfig.initializeFirebase(context)
             SecurityConfig.initializeKeystore(context)
-            
+
             // Validate Firebase database connection
             val isConnected = FirebaseConfig.validateConnection(context)
             Log.i("MediGrid", "Firebase database connected: $isConnected to ${FirebaseConfig.DATABASE_URL}")
@@ -76,6 +77,9 @@ fun MediGridApp() {
             // Initialize Firebase Data Service
             val firebaseDataService = FirebaseDataService.getInstance(context)
             firebaseDataService.enableOfflinePersistence()
+
+            // Initialize RealTimeDataService for live app-wide updates
+            RealTimeDataService.getInstance(context)
 
             // Get FCM token for notifications
             firebaseDataService.getFCMToken { token ->

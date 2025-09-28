@@ -1,0 +1,232 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "telemedicine_sessions": {
+      ".read": "auth != null && (auth.token.role == 'DOCTOR' || auth.token.role == 'NURSE' || auth.token.role == 'ADMIN')",
+      ".write": "auth != null && (auth.token.role == 'DOCTOR' || auth.token.role == 'NURSE' || auth.token.role == 'ADMIN')",
+      "$sessionId": {
+        ".validate": "newData.hasChildren(['id', 'patientId', 'patientName', 'scheduledTime', 'scheduledDate', 'status'])",
+        "id": {
+          ".validate": "newData.isString() && newData.val() == $sessionId"
+        },
+        "patientId": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "patientName": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "patientPhone": {
+          ".validate": "newData.isString()"
+        },
+        "scheduledTime": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "scheduledDate": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "status": {
+          ".validate": "newData.isString() && (newData.val() == 'SCHEDULED' || newData.val() == 'WAITING' || newData.val() == 'IN_PROGRESS' || newData.val() == 'COMPLETED' || newData.val() == 'CANCELLED' || newData.val() == 'RESCHEDULED')"
+        },
+        "consultationType": {
+          ".validate": "newData.isString() && (newData.val() == 'FOLLOW_UP' || newData.val() == 'NEW_CONSULTATION' || newData.val() == 'EMERGENCY' || newData.val() == 'PRESCRIPTION_REVIEW' || newData.val() == 'MENTAL_HEALTH')"
+        },
+        "priority": {
+          ".validate": "newData.isString() && (newData.val() == 'LOW' || newData.val() == 'NORMAL' || newData.val() == 'HIGH' || newData.val() == 'URGENT')"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber() && newData.val() == now"
+        },
+        "createdBy": {
+          ".validate": "newData.isString() && newData.val() == auth.uid"
+        }
+      }
+    },
+    "clinics": {
+      ".read": "auth != null && (auth.token.role == 'DOCTOR' || auth.token.role == 'NURSE' || auth.token.role == 'ADMIN' || auth.token.role == 'TECHNICIAN')",
+      ".write": "auth != null && auth.token.role == 'ADMIN'",
+      "$clinicId": {
+        ".validate": "newData.hasChildren(['id', 'name', 'status'])",
+        "id": {
+          ".validate": "newData.isString() && newData.val() == $clinicId"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "status": {
+          ".validate": "newData.isString() && (newData.val() == 'ONLINE' || newData.val() == 'BACKUP' || newData.val() == 'OFFLINE')"
+        },
+        "patientsToday": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "staffCount": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "powerStatus": {
+          ".validate": "newData.isString()"
+        },
+        "lastUpdated": {
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+    "emergency_alerts": {
+      ".read": "auth != null && (auth.token.role == 'DOCTOR' || auth.token.role == 'NURSE' || auth.token.role == 'ADMIN' || auth.token.role == 'TECHNICIAN')",
+      ".write": "auth != null && (auth.token.role == 'DOCTOR' || auth.token.role == 'NURSE' || auth.token.role == 'ADMIN')",
+      "$alertId": {
+        ".validate": "newData.hasChildren(['id', 'title', 'description', 'level', 'timestamp'])",
+        "id": {
+          ".validate": "newData.isString() && newData.val() == $alertId"
+        },
+        "title": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "description": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "level": {
+          ".validate": "newData.isString() && (newData.val() == 'URGENT' || newData.val() == 'WARNING' || newData.val() == 'INFO')"
+        },
+        "location": {
+          ".validate": "newData.isString()"
+        },
+        "isActive": {
+          ".validate": "newData.isBoolean()"
+        },
+        "timestamp": {
+          ".validate": "newData.isNumber()"
+        },
+        "createdBy": {
+          ".validate": "newData.isString() && newData.val() == auth.uid"
+        }
+      }
+    },
+    "inventory": {
+      ".read": "auth != null && (auth.token.role == 'DOCTOR' || auth.token.role == 'NURSE' || auth.token.role == 'ADMIN' || auth.token.role == 'TECHNICIAN')",
+      ".write": "auth != null && (auth.token.role == 'ADMIN' || auth.token.role == 'TECHNICIAN')",
+      "$itemId": {
+        ".validate": "newData.hasChildren(['id', 'name', 'category', 'stockLevel'])",
+        "id": {
+          ".validate": "newData.isString() && newData.val() == $itemId"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "category": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "stockLevel": {
+          ".validate": "newData.isString() || newData.isNumber()"
+        },
+        "location": {
+          ".validate": "newData.isString()"
+        },
+        "expiryDate": {
+          ".validate": "newData.isString()"
+        },
+        "status": {
+          ".validate": "newData.isString()"
+        },
+        "lastUpdated": {
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+    "patients": {
+      ".read": "auth != null && (auth.token.role == 'DOCTOR' || auth.token.role == 'NURSE') && auth.token.phi_access == true",
+      ".write": "auth != null && (auth.token.role == 'DOCTOR' || auth.token.role == 'NURSE') && auth.token.phi_access == true",
+      "$patientId": {
+        ".validate": "newData.hasChildren(['id', 'displayName', 'age', 'gender', 'createdBy'])",
+        "id": {
+          ".validate": "newData.isString() && newData.val() == $patientId"
+        },
+        "displayName": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "age": {
+          ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() < 150"
+        },
+        "gender": {
+          ".validate": "newData.isString() && (newData.val() == 'MALE' || newData.val() == 'FEMALE' || newData.val() == 'OTHER')"
+        },
+        "sanitizedSymptoms": {
+          ".validate": "newData.isString()"
+        },
+        "lastVisit": {
+          ".validate": "newData.isString()"
+        },
+        "isEmergency": {
+          ".validate": "newData.isBoolean()"
+        },
+        "createdBy": {
+          ".validate": "newData.isString() && newData.val() == auth.uid"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "lastModified": {
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+    "analytics": {
+      ".read": "auth != null && (auth.token.role == 'ADMIN' || auth.token.role == 'DOCTOR')",
+      ".write": "auth != null && (auth.token.role == 'ADMIN' || auth.token.role == 'DOCTOR' || auth.token.role == 'NURSE')",
+      "$eventId": {
+        ".validate": "newData.hasChildren(['id', 'type', 'timestamp'])",
+        "id": {
+          ".validate": "newData.isString() && newData.val() == $eventId"
+        },
+        "type": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "data": {
+          ".validate": "newData.hasChildren()"
+        },
+        "timestamp": {
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+    "user_profiles": {
+      "$userId": {
+        ".read": "auth != null && auth.uid == $userId",
+        ".write": "auth != null && auth.uid == $userId",
+        ".validate": "newData.hasChildren(['uid', 'role', 'lastLogin'])",
+        "uid": {
+          ".validate": "newData.isString() && newData.val() == auth.uid"
+        },
+        "role": {
+          ".validate": "newData.isString() && (newData.val() == 'DOCTOR' || newData.val() == 'NURSE' || newData.val() == 'ADMIN' || newData.val() == 'TECHNICIAN')"
+        },
+        "displayName": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "lastLogin": {
+          ".validate": "newData.isNumber()"
+        },
+        "preferences": {
+          ".validate": "newData.hasChildren()"
+        }
+      }
+    },
+    "security_logs": {
+      ".read": "auth != null && auth.token.role == 'ADMIN'",
+      ".write": "auth != null",
+      "$logId": {
+        "timestamp": {
+          ".validate": "newData.isNumber()"
+        },
+        "userId": {
+          ".validate": "newData.isString()"
+        },
+        "action": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "details": {
+          ".validate": "newData.hasChildren()"
+        }
+      }
+    }
+  }
+}

@@ -6,18 +6,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBox
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,6 +22,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import com.example.medigrid.data.Alert
 import com.example.medigrid.data.AlertLevel
+import com.example.medigrid.data.RealTimeDataService
+import com.example.medigrid.data.formatTimestamp
 import com.example.medigrid.security.FirebaseDataService
 import com.example.medigrid.security.SecurityLogger
 import com.example.medigrid.data.DataManager
@@ -36,42 +31,64 @@ import com.example.medigrid.data.StatCard
 import com.example.medigrid.ui.components.StatCardComponent
 import com.example.medigrid.ui.theme.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EmergencyAlertsScreen(
     modifier: Modifier = Modifier
 ) {
-    var showNewAlertDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val dataManager = remember { DataManager.getInstance(context) }
-    
-    // Firebase integration for real-time alerts (optional)
+    val realTimeService = remember { RealTimeDataService.getInstance(context) }
     val firebaseDataService = remember { FirebaseDataService.getInstance(context) }
+    
+    // Real-time data integration
+    val systemStats by realTimeService.systemStats.collectAsState()
+    val emergencyAlerts by realTimeService.emergencyAlerts.collectAsState()
+    val healthMetrics by realTimeService.healthMetrics.collectAsState()
+    val patientActivity by realTimeService.patientActivity.collectAsState()
+    val clinicStatus by realTimeService.clinicStatus.collectAsState()
+    val networkActivity by realTimeService.networkActivity.collectAsState()
+    
+    // Firebase connection status
     val connectionStatus by firebaseDataService.connectionStatus.collectAsState()
+    val firebaseEmergencyAlerts by firebaseDataService.emergencyAlerts.collectAsState()
+    
+    // Local state
+    var alerts by remember { mutableStateOf(dataManager.getAlerts()) }
+    var selectedFilter by remember { mutableStateOf(AlertLevel.URGENT) }
+    var showNewAlertDialog by remember { mutableStateOf(false) }
+    var showFilterOptions by remember { mutableStateOf(false) }
+    var lastUpdateTime by remember { mutableStateOf(System.currentTimeMillis()) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    
+    // Auto-refresh alerts every 10 seconds
+    LaunchedEffect(Unit) {
+        while (true) {
+            alerts = dataManager.getAlerts()
+            lastUpdateTime = System.currentTimeMillis()
+            delay(10000) // 10 seconds
+        }
+    }
     
     // Log Firebase connection status
     LaunchedEffect(connectionStatus) {
         if (connectionStatus) {
             SecurityLogger.logSecurityEvent(
                 "emergency_screen_firebase_connected",
-                mapOf("screen" to "emergency_alerts"),
+                mapOf(
+                    "screen" to "emergency_alerts",
+                    "live_alerts_count" to emergencyAlerts.size.toString(),
+                    "system_load" to systemStats.cpuUsage.toString()
+                ),
                 context
             )
         }
     }
 
-    // Real-time data
-    var alerts by remember { mutableStateOf(dataManager.getAlerts()) }
-    var selectedFilter by remember { mutableStateOf(AlertLevel.URGENT) }
-    var showAddAlert by remember { mutableStateOf(false) }
-    var showFilterOptions by remember { mutableStateOf(false) }
-    
-    // Real-time Firebase synchronization
-    val emergencyAlerts by firebaseDataService.emergencyAlerts.collectAsState()
-    
     // Convert Firebase data to Alert objects
-    val firebaseAlertsConverted = emergencyAlerts.mapNotNull { alertMap ->
+    val firebaseAlertsConverted = firebaseEmergencyAlerts.mapNotNull { alertMap ->
         try {
             Alert(
                 id = alertMap["id"] as? String ?: "",
@@ -85,8 +102,46 @@ fun EmergencyAlertsScreen(
         } catch (e: Exception) { null }
     }
     
-    // Use Firebase data if available, otherwise fall back to local data
-    val displayAlerts = if (firebaseAlertsConverted.isNotEmpty()) firebaseAlertsConverted else alerts
+    // Combine real-time emergency alerts with Firebase data
+    val combinedAlerts = (emergencyAlerts.map { alert ->
+        Alert(
+            id = alert.id,
+            title = "${alert.type.replace('_', ' ')} Emergency",
+            description = "${alert.severity} priority emergency response required",
+            location = alert.location,
+            time = formatTimestamp(alert.timestamp),
+            level = when (alert.severity) {
+                "CRITICAL" -> AlertLevel.URGENT
+                "HIGH" -> AlertLevel.URGENT
+                "MODERATE" -> AlertLevel.WARNING
+                else -> AlertLevel.INFO
+            },
+            isActive = alert.status == "ACTIVE"
+        )
+    } + firebaseAlertsConverted + alerts).distinctBy { it.id }
+
+    // Manual refresh function
+    fun refreshData() {
+        isRefreshing = true
+        alerts = dataManager.getAlerts()
+        lastUpdateTime = System.currentTimeMillis()
+        
+        try {
+            SecurityLogger.logSecurityEvent(
+                "emergency_alerts_refreshed",
+                mapOf(
+                    "total_alerts" to combinedAlerts.size.toString(),
+                    "urgent_alerts" to combinedAlerts.count { it.level == AlertLevel.URGENT }.toString(),
+                    "firebase_connected" to connectionStatus.toString()
+                ),
+                context
+            )
+        } catch (e: Exception) {
+            // Handle logging error gracefully
+        }
+        
+        isRefreshing = false
+    }
 
     LazyColumn(
         modifier = modifier
@@ -94,19 +149,44 @@ fun EmergencyAlertsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Header
+        // Enhanced Header with Real-Time Data
         item {
             EmergencyHeader(
-                alertCount = displayAlerts.count { it.level == AlertLevel.URGENT },
+                alertCount = combinedAlerts.count { it.level == AlertLevel.URGENT },
+                totalAlerts = combinedAlerts.size,
+                systemStats = systemStats,
+                healthMetrics = healthMetrics,
+                lastUpdate = lastUpdateTime,
                 onAddAlert = { showNewAlertDialog = true },
-                onFilter = { showFilterOptions = true }
+                onFilter = { showFilterOptions = true },
+                onRefresh = { refreshData() },
+                isRefreshing = isRefreshing,
+                connectionStatus = connectionStatus
             )
         }
 
-        // Statistics
+        // Real-Time System Status for Emergency Response
+        item {
+            EmergencySystemStatusCard(
+                systemStats = systemStats,
+                healthMetrics = healthMetrics,
+                clinicStatusMap = clinicStatus
+            )
+        }
+
+        // Live Emergency Response Metrics
+        item {
+            EmergencyResponseMetricsCard(
+                emergencyAlerts = emergencyAlerts,
+                healthMetrics = healthMetrics,
+                networkActivity = networkActivity.filter { it.status == "URGENT" }
+            )
+        }
+
+        // Enhanced statistics with real-time data
         item {
             Text(
-                text = "Emergency Statistics",
+                text = "Live Emergency Statistics",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -119,30 +199,65 @@ fun EmergencyAlertsScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                val stats = getEmergencyStats(displayAlerts)
+                val stats = getEnhancedEmergencyStats(
+                    combinedAlerts,
+                    emergencyAlerts,
+                    healthMetrics,
+                    systemStats
+                )
                 items(stats.size) { index ->
                     StatCardComponent(statCard = stats[index])
                 }
             }
         }
 
-        // Active Alerts
+        // Active Real-Time Alerts
         item {
-            Text(
-                text = "Active Alerts",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Live Emergency Alerts",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(Color.Red, CircleShape)
+                )
+                Text(
+                    text = "LIVE",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
         }
 
-        if (displayAlerts.isNotEmpty()) {
-            items(displayAlerts.size) { index ->
-                EmergencyAlertCard(alert = displayAlerts[index])
+        if (combinedAlerts.isNotEmpty()) {
+            items(combinedAlerts.sortedByDescending { 
+                when (it.level) {
+                    AlertLevel.URGENT -> 3
+                    AlertLevel.WARNING -> 2
+                    AlertLevel.INFO -> 1
+                }
+            }) { alert ->
+                EnhancedEmergencyAlertCard(
+                    alert = alert,
+                    isLiveAlert = emergencyAlerts.any { it.id == alert.id }
+                )
             }
         } else {
             item {
                 EmptyAlertsCard()
             }
+        }
+
+        // Emergency Contact Information
+        item {
+            EmergencyContactsCard()
         }
     }
 
@@ -162,8 +277,15 @@ fun EmergencyAlertsScreen(
 @Composable
 private fun EmergencyHeader(
     alertCount: Int,
+    totalAlerts: Int,
+    systemStats: com.example.medigrid.data.SystemStats,
+    healthMetrics: com.example.medigrid.data.HealthMetrics,
+    lastUpdate: Long,
     onAddAlert: () -> Unit,
-    onFilter: () -> Unit
+    onFilter: () -> Unit,
+    onRefresh: () -> Unit,
+    isRefreshing: Boolean,
+    connectionStatus: Boolean
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -178,7 +300,7 @@ private fun EmergencyHeader(
                 color = MaterialTheme.colorScheme.primary
             )
             Text(
-                text = "$alertCount active emergencies",
+                text = "$alertCount active emergencies out of $totalAlerts",
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -194,12 +316,26 @@ private fun EmergencyHeader(
                 Spacer(modifier = Modifier.width(4.dp))
                 Text("Add Alert")
             }
+            
+            if (isRefreshing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            } else {
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun EmergencyAlertCard(alert: Alert) {
+private fun EnhancedEmergencyAlertCard(
+    alert: Alert,
+    isLiveAlert: Boolean
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -246,6 +382,14 @@ private fun EmergencyAlertCard(alert: Alert) {
                     text = "${alert.location} • ${alert.time}",
                     fontSize = 10.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            if (isLiveAlert) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(Color.Red, CircleShape)
                 )
             }
         }
@@ -374,7 +518,12 @@ private fun AddEmergencyAlertDialog(
     )
 }
 
-private fun getEmergencyStats(alerts: List<Alert>) = listOf(
+private fun getEnhancedEmergencyStats(
+    alerts: List<Alert>,
+    emergencyAlerts: List<com.example.medigrid.data.EmergencyAlert>,
+    healthMetrics: com.example.medigrid.data.HealthMetrics,
+    systemStats: com.example.medigrid.data.SystemStats,
+) = listOf(
     StatCard(
         title = "Active Emergencies",
         value = alerts.count { it.level == AlertLevel.URGENT }.toString(),
@@ -402,5 +551,127 @@ private fun getEmergencyStats(alerts: List<Alert>) = listOf(
         change = "Routine updates",
         isPositive = true,
         icon = Icons.Filled.CheckCircle
+    ),
+    StatCard(
+        title = "Live Emergency Alerts",
+        value = emergencyAlerts.size.toString(),
+        change = "Real-time",
+        isPositive = true,
+        icon = Icons.Filled.Notifications
+    ),
+    StatCard(
+        title = "System Load",
+        value = "${systemStats.cpuUsage}%",
+        change = "Current load",
+        isPositive = systemStats.cpuUsage < 80,
+        icon = Icons.Filled.Info
     )
 )
+
+@Composable
+private fun EmergencySystemStatusCard(
+    systemStats: com.example.medigrid.data.SystemStats,
+    healthMetrics: com.example.medigrid.data.HealthMetrics,
+    clinicStatusMap: Map<String, com.example.medigrid.data.RealTimeClinicStatus>,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = "System Status",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "CPU Usage: ${systemStats.cpuUsage}%",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "Memory Usage: ${systemStats.memoryUsage}%",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "Active Clinics: ${clinicStatusMap.values.count { it.status == "OPERATIONAL" }}/${clinicStatusMap.size}",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmergencyResponseMetricsCard(
+    emergencyAlerts: List<com.example.medigrid.data.EmergencyAlert>,
+    healthMetrics: com.example.medigrid.data.HealthMetrics,
+    networkActivity: List<com.example.medigrid.data.NetworkActivity>
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = "Emergency Response Metrics",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "Response Time: ${healthMetrics.emergencyResponseTime}ms",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "Network Activity: ${networkActivity.size} requests",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "Emergency Alerts: ${emergencyAlerts.size}",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmergencyContactsCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = "Emergency Contacts",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "Call 911 for immediate assistance",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "Contact clinic administration for non-emergency issues",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
